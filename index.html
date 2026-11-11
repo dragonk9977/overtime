@@ -1,0 +1,778 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>시간외근무 투입 분석기</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: 작업표준서 같은 도구 화면 — 상단 파일/필터 바, 요약 → 추이 → 조직 → 개인 → 기여도 순으로 내려가는 단일 컬럼 */
+:root{
+  --bg:#f5f6f4; --surface:#ffffff; --sunk:#eceeea; --line:#d9ddd6; --fg:#1d2420; --muted:#5f6a63; --faint:#8b958e;
+  --accent:#1f6f5c; --accent-soft:#dcebe5; --warn:#b5651d; --moved:#f8ecda; --moved-strong:#f1d6ae;
+  --p1:#1f6f5c; --p2:#c27a1e; --p3:#4f5fa8; --p4:#9a4a6e; --p5:#5d7d2a; --p6:#6b6f74;
+  --heat:31,111,92;
+  --f-body:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141917; --surface:#1b211e; --sunk:#232a26; --line:#323b36; --fg:#e6ebe7; --muted:#a2ada6; --faint:#76817a;
+  --accent:#5cc0a2; --accent-soft:#21362f; --warn:#e3a35a; --moved:#33291c; --moved-strong:#4d3a22;
+  --p1:#5cc0a2; --p2:#e3a35a; --p3:#8f9cf0; --p4:#d98bb0; --p5:#a5c867; --p6:#9aa0a6;
+  --heat:92,192,162; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#141917; --surface:#1b211e; --sunk:#232a26; --line:#323b36; --fg:#e6ebe7; --muted:#a2ada6; --faint:#76817a;
+  --accent:#5cc0a2; --accent-soft:#21362f; --warn:#e3a35a; --moved:#33291c; --moved-strong:#4d3a22;
+  --p1:#5cc0a2; --p2:#e3a35a; --p3:#8f9cf0; --p4:#d98bb0; --p5:#a5c867; --p6:#9aa0a6;
+  --heat:92,192,162; color-scheme:dark;}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.55}
+.wrap{max-width:1240px;margin:0 auto;padding-block:24px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:16px;margin:0;font-weight:700;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px;margin:0}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.head{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel-h{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
+.panel-h .sub{flex-basis:100%}
+.drop{border:1.5px dashed var(--line);border-radius:var(--r);padding:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;background:var(--sunk);transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop p{margin:0}
+.btn{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:7px 12px;border-radius:var(--r);cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.btn:focus-visible,select:focus-visible,input:focus-visible,.chip:focus-visible,tr[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 8px;border-radius:999px;background:var(--sunk);border:1px solid var(--line);color:var(--muted)}
+.chip b{color:var(--fg);font-weight:600}
+.chip button{border:0;background:none;color:var(--faint);cursor:pointer;font-size:13px;padding:0 2px;line-height:1}
+.chip button:hover{color:var(--warn)}
+.banner{font-size:13px;padding:8px 12px;border-radius:var(--r);background:var(--accent-soft);color:var(--fg)}
+.filters{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.field>span{letter-spacing:.02em}
+select,input[type=search]{font:inherit;font-size:13px;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:6px 8px;min-width:120px}
+.types{display:flex;flex-wrap:wrap;gap:6px}
+.types label{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--fg);padding:5px 9px;border:1px solid var(--line);border-radius:var(--r);cursor:pointer;background:var(--surface)}
+.types input{accent-color:var(--accent);margin:0}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.kpi .l{font-size:12px;color:var(--muted)}
+.kpi .v{font-family:var(--f-num);font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.kpi .v small{font-size:13px;color:var(--muted);font-weight:500;margin-left:2px}
+.kpi .d{font-size:12px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{font:inherit;font-size:12px;border:0;background:var(--surface);color:var(--muted);padding:6px 10px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--surface);font-weight:600}
+.chart{width:100%;overflow-x:auto}
+.chart svg{display:block;min-width:520px;width:100%;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+th{font-size:12px;font-weight:600;color:var(--muted);background:var(--sunk);position:sticky;top:0}
+th.l,td.l{text-align:left}
+td{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+td.l{font-family:var(--f-body)}
+tbody tr:last-child td{border-bottom:0}
+tr.part td{background:var(--sunk);font-weight:600}
+tr.total td{font-weight:700;border-top:2px solid var(--line)}
+tr.cell td.l{padding-left:24px}
+tr[tabindex]{cursor:pointer}
+tr[tabindex]:hover td{background:var(--accent-soft)}
+td.zero{color:var(--faint)}
+.rank{display:inline-flex;min-width:26px;justify-content:center;font-weight:600}
+.rank.top{color:var(--accent)}
+.who{display:flex;flex-direction:column;line-height:1.3}
+.who small{color:var(--faint);font-family:var(--f-num);font-size:11px}
+.bar{display:flex;height:8px;width:120px;background:var(--sunk);border-radius:2px;overflow:hidden}
+.bar span{display:block;height:100%}
+.pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--sunk);color:var(--muted);font-family:var(--f-body)}
+.pill.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:20px}
+.tops{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.top-m{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.top-m h3{margin:0;font-size:13px;display:flex;justify-content:space-between;gap:8px}
+.top-m h3 span{font-family:var(--f-num);color:var(--muted);font-weight:500}
+.top-m ol{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;font-size:12.5px}
+.top-m li{display:flex;justify-content:space-between;gap:8px}
+.top-m li em{font-style:normal;color:var(--faint);margin-right:6px;font-family:var(--f-num)}
+.top-m li b{font-family:var(--f-num);font-weight:500}
+.top-m .empty{color:var(--faint);font-size:12px}
+.hbar{display:grid;grid-template-columns:minmax(90px,auto) 1fr auto;gap:6px 10px;align-items:center;font-size:13px}
+.hbar .t{height:14px;background:var(--sunk);border-radius:2px;overflow:hidden}
+.hbar .t span{display:block;height:100%}
+.hbar .n{font-family:var(--f-num);font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}
+.note{font-size:12px;color:var(--muted);margin:0;line-height:1.6}
+.note b{color:var(--fg)}
+.more{align-self:center}
+.empty-state{padding:28px;text-align:center;color:var(--muted)}
+dialog{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--fg);padding:0;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 48px)}
+dialog::backdrop{background:rgba(0,0,0,.35)}
+.dlg{padding:18px;display:flex;flex-direction:column;gap:14px}
+.dlg-h{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+td.moved{background:var(--moved)}
+td.moved .mv{display:inline-block;margin-left:6px;font-size:10.5px;font-weight:600;color:var(--warn);border:1px solid currentColor;border-radius:3px;padding:0 4px;line-height:1.5;vertical-align:1px}
+tr.org-hot td.moved,tr[tabindex]:hover td.moved{background:var(--moved-strong)}
+.tip{position:fixed;z-index:50;max-width:min(380px,calc(100vw - 24px));background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 6px 24px rgba(0,0,0,.18);padding:10px 12px;font-size:12.5px;pointer-events:none;display:flex;flex-direction:column;gap:6px}
+.tip h4{margin:0;font-size:12.5px;color:var(--warn)}
+.tip ol{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px}
+.tip li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:baseline}
+.tip li .when{font-family:var(--f-num);color:var(--muted);font-size:11.5px;white-space:nowrap}
+.tip li.now{font-weight:600}
+.tip mark{background:var(--moved-strong);color:inherit;border-radius:2px;padding:0 2px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:var(--r);font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <div>
+      <h1>시간외근무 투입 분석기</h1>
+      <p class="sub">마이웍스 월별 근무현황(monthWork) 엑셀을 넣으면 파트·셀·개인별 시간외근무 투입시간과 기여도를 계산합니다.</p>
+    </div>
+    <div class="seg" role="group" aria-label="화면 테마">
+      <button type="button" id="thSys" aria-pressed="true">시스템</button><button type="button" id="thLight" aria-pressed="false">라이트</button><button type="button" id="thDark" aria-pressed="false">다크</button>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="h-files">
+    <div class="panel-h"><h2 id="h-files">데이터</h2></div>
+    <div class="drop" id="drop">
+      <p>엑셀 파일(.xlsx)을 여기에 끌어다 놓거나 선택하세요. 월별 근무현황 파일은 여러 개를 한 번에 넣어도 되고, 같은 월이 다시 들어오면 새 파일로 교체합니다. 평가대상자 명단 파일도 같은 곳에 넣으면 자동으로 알아봅니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label class="btn primary" for="file" style="cursor:pointer">파일 선택</label>
+        <input type="file" id="file" accept=".xlsx,.xls,.csv" multiple hidden>
+        <button type="button" class="btn" id="clearAll">데이터 비우기</button>
+      </div>
+    </div>
+    <div class="banner" id="banner" hidden></div>
+    <div class="chips" id="monthChips"></div>
+    <div class="chips" id="gradeChip"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-filter">
+    <div class="panel-h"><h2 id="h-filter">분석 조건</h2></div>
+    <div class="filters">
+      <label class="field"><span>시작 월</span><select id="fFrom"></select></label>
+      <label class="field"><span>종료 월</span><select id="fTo"></select></label>
+      <label class="field"><span>파트</span><select id="fPart"></select></label>
+      <label class="field"><span>셀</span><select id="fCell"></select></label>
+      <label class="field"><span>고용형태</span><select id="fEmp"></select></label>
+      <div class="field"><span>포함할 시간외 유형</span><div class="types" id="fTypes"></div></div>
+    </div>
+  </section>
+
+  <section class="kpis" id="kpis" aria-label="요약"></section>
+
+  <section class="panel" aria-labelledby="h-trend">
+    <div class="panel-h">
+      <h2 id="h-trend">월별 투입 추이</h2>
+      <div class="seg" role="group" aria-label="추이 구분">
+        <button type="button" data-trend="part" aria-pressed="true">파트별</button><button type="button" data-trend="cell" aria-pressed="false">셀별</button><button type="button" data-trend="type" aria-pressed="false">유형별</button>
+      </div>
+    </div>
+    <div class="chart" id="trend"></div>
+    <div class="legend" id="trendLegend"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-org">
+    <div class="panel-h">
+      <h2 id="h-org">파트·셀별 투입시간</h2>
+      <button type="button" class="btn" data-copy="orgTable">표 복사</button>
+      <p class="sub">월별 칸 색이 진할수록 투입이 많습니다. 인원은 해당 월 파일에 있는 소속 인원, 참여율은 시간외근무가 1시간 이상 있는 인원 비율입니다.</p>
+    </div>
+    <div class="tbl" id="orgWrap"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-rank">
+    <div class="panel-h">
+      <h2 id="h-rank">개인별 랭킹</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <div class="seg" role="group" aria-label="랭킹 구분"><button type="button" data-rview="team" aria-pressed="true">팀 전체</button><button type="button" data-rview="part" aria-pressed="false">파트별</button><button type="button" data-rview="grade" aria-pressed="false">평가그룹별</button></div>
+        <select id="rankMonth" aria-label="랭킹 기준 월"></select>
+        <input type="search" id="rankSearch" placeholder="이름·ID 검색" aria-label="이름 또는 ID 검색">
+        <button type="button" class="btn" data-copy="rankTable">표 복사</button>
+      </div>
+      <p class="sub">행을 누르면 그 사람의 월별 추이를 볼 수 있습니다. '파트별'은 파트마다, '평가그룹별'은 명단의 파트×grade 그룹마다 따로 순위를 매깁니다. 팀장은 합계·기여도 계산에는 들어가지만 순위에서는 빠집니다. 기간 중 조직이 바뀐 사람은 마지막 조직으로 표시하고 소속 칸에 색을 넣었습니다. 마우스를 올리면 변동 이력이 나옵니다. 팀 기여도는 선택 조건 전체 시간 대비, 파트·셀 내 기여도는 소속 파트·셀 시간 대비 비중입니다.</p>
+    </div>
+    <div class="tbl" id="rankWrap"></div>
+    <button type="button" class="btn more" id="rankMore" hidden>전체 보기</button>
+  </section>
+
+  <section class="panel" aria-labelledby="h-tops">
+    <div class="panel-h"><h2 id="h-tops">월별 TOP 5</h2></div>
+    <div class="tops" id="tops"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-contrib">
+    <div class="panel-h">
+      <h2 id="h-contrib">기여도 분석</h2>
+      <p class="sub">투입이 소수에게 몰려 있는지, 셀별로 얼마씩 나눠 맡았는지 봅니다.</p>
+    </div>
+    <div class="grid2">
+      <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+        <h3 style="margin:0;font-size:14px">누적 기여 곡선</h3>
+        <div class="chart" id="pareto"></div>
+        <p class="note" id="paretoNote"></p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+        <h3 style="margin:0;font-size:14px">셀별 기여도</h3>
+        <div class="hbar" id="cellShare"></div>
+        <p class="note" id="cellNote"></p>
+      </div>
+    </div>
+  </section>
+
+  <p class="note">계산 기준: 시간외근무 = 선택한 유형(연장야간·휴일야간·연장·휴일·휴일연장) 합계. 월별 집계는 그 월 파일의 소속(파트·셀)을 따르고, 전체 기간 개인 랭킹의 소속은 가장 최근 월 기준입니다. 불러온 데이터는 이 브라우저에만 저장됩니다.</p>
+</div>
+
+<dialog id="dlg"><div class="dlg" id="dlgBody"></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+
+<script id="core">
+/* ===== 파싱·집계 (순수 함수) ===== */
+const OT_TYPES=["연장야간","휴일야간","연장","휴일","휴일연장"];
+const norm=v=>v==null?"":String(v).replace(/\(h\)/gi,"").replace(/\s+/g,"").trim();
+function fillMerges(aoa,merges){
+  (merges||[]).forEach(m=>{
+    const v=(aoa[m.s.r]||[])[m.s.c];
+    for(let r=m.s.r;r<=m.e.r;r++){aoa[r]=aoa[r]||[];for(let c=m.s.c;c<=m.e.c;c++){if(aoa[r][c]==null||aoa[r][c]==="")aoa[r][c]=v;}}
+  });
+  return aoa;
+}
+function monthFrom(text){
+  const m=String(text||"").match(/(20\d{2})\D?(0[1-9]|1[0-2])(?!\d)/);
+  return m?`${m[1]}-${m[2]}`:null;
+}
+function parseSheet(aoa,fileName,sheetName){
+  let h=-1;
+  for(let i=0;i<Math.min(aoa.length,40);i++){const row=(aoa[i]||[]).map(norm);if(row.includes("성명")&&(row.includes("파트")||row.includes("셀"))){h=i;break;}}
+  if(h<0)return {records:[],error:"머리글(성명·파트)을 찾지 못했습니다"};
+  const grp=aoa[h-1]||[],hdr=aoa[h]||[],sub=aoa[h+1]||[];
+  const ncol=Math.max(grp.length,hdr.length,sub.length);
+  const names=[],groups=[];
+  for(let c=0;c<ncol;c++){names[c]=norm(sub[c])||norm(hdr[c])||norm(grp[c]);groups[c]=norm(grp[c]);}
+  const find=(...alts)=>{for(const a of alts){const i=names.findIndex(n=>n===a);if(i>=0)return i;}return -1;};
+  const col={no:find("NO","No","번호"),sabun:find("사번"),id:find("ID","아이디"),name:find("성명","이름"),
+    team:names.findIndex(n=>/^팀/.test(n)&&!/팀장/.test(n)),part:find("파트"),cell:find("셀"),title:find("직책"),emp:find("고용형태"),year:find("년"),mon:find("월")};
+  const ot={};
+  const hasGroup=groups.some(g=>g.includes("시간외"));
+  OT_TYPES.forEach(t=>{
+    let i=names.findIndex((n,c)=>n===t&&(!hasGroup||groups[c].includes("시간외")));
+    if(i<0)i=names.findIndex(n=>n===t);
+    ot[t]=i;
+  });
+  if(OT_TYPES.every(t=>ot[t]<0))return {records:[],error:"시간외근무 열을 찾지 못했습니다"};
+  const fallbackMonth=monthFrom(sheetName)||monthFrom(fileName);
+  const out=[];
+  const start=h+1;
+  for(let r=start;r<aoa.length;r++){
+    const row=aoa[r]||[];
+    const name=norm(row[col.name]);
+    if(!name||name==="성명")continue;
+    if(col.no>=0&&/^(합|합계|계|total)$/i.test(norm(row[col.no])))continue;
+    let month=null;
+    if(col.year>=0&&col.mon>=0){
+      const y=String(row[col.year]??"").match(/\d{4}/),mo=String(row[col.mon]??"").match(/\d{1,2}/);
+      if(y&&mo)month=`${y[0]}-${String(mo[0]).padStart(2,"0")}`;
+    }
+    month=month||fallbackMonth;
+    if(!month)continue;
+    const g=i=>i>=0?(row[i]==null?"":String(row[i]).trim()):"";
+    const o={};OT_TYPES.forEach(t=>{const v=ot[t]>=0?parseFloat(String(row[ot[t]]??"").replace(/,/g,"")):0;o[t]=isFinite(v)?v:0;});
+    out.push({month,sabun:g(col.sabun),id:g(col.id),name:g(col.name),team:g(col.team),
+      part:g(col.part)||"팀 직속",cell:g(col.cell)||(g(col.part)?"파트 직속":"팀장"),
+      title:g(col.title),emp:g(col.emp),ot:o});
+  }
+  return {records:out};
+}
+const keyOf=r=>r.sabun||r.id||r.name;
+const isLeader=p=>String(p.title||"").replace(/\s/g,"")==="팀장"; // 합계에는 포함, 순위에서는 제외
+/* 평가대상자 명단: 사번/ID/성명 + grade 열(또는 'grade1' 구분 행, 시트 이름) */
+function gradeNorm(v){
+  const t=String(v??"").replace(/\s+/g," ").trim();if(!t)return null;
+  const m=t.match(/^(grade|group|그룹|등급|g)?\s*(\d+)\s*(그룹|등급)?$/i);
+  if(m){const w=(m[1]||"group").toLowerCase();return `${w==="grade"?"Grade":w==="등급"?"등급":"Group"} ${m[2]}`;}
+  return t;
+}
+const GRADE_HDR=/grade|group|등급|평가그룹|평가군/i;
+function parseGradeSheet(aoa,sheetName){
+  let h=-1;
+  for(let i=0;i<Math.min(aoa.length,30);i++){const row=(aoa[i]||[]).map(norm);if(row.some(n=>["성명","이름","사번","ID","아이디","LDAP"].includes(n))){h=i;break;}}
+  if(h<0)return [];
+  const names=(aoa[h]||[]).map(norm);
+  const find=(...a)=>{for(const x of a){const i=names.indexOf(x);if(i>=0)return i;}return -1;};
+  const body=aoa.slice(h+1).filter(r=>r&&r.some(v=>v!=null&&v!==""));
+  const looksPart=c=>{const vs=body.map(r=>r[c]).filter(v=>v!=null&&v!=="");return vs.length&&vs.filter(v=>/파트$/.test(String(v).trim())).length/vs.length>0.6;};
+  let part=find("파트","소속파트");if(part<0)part=names.findIndex((n,c)=>/^소속/.test(n)&&looksPart(c));
+  let grade=names.findIndex(n=>GRADE_HDR.test(n));if(grade<0)grade=names.findIndex(n=>/^(그룹|구분|평가구분)$/.test(n));
+  const gradeNote=grade>=0&&names[grade+1]===names[grade]?grade+1:-1; // 병합된 머리글의 옆 칸(예: 만 8년 미만)
+  const col={sabun:find("사번"),id:find("ID","아이디","LDAP","계정"),name:find("성명","이름"),part,grade,note:gradeNote,
+    kpi:names.findIndex(n=>/^KPI/i.test(n)),title:find("직책")};
+  const sheetGrade=GRADE_HDR.test(sheetName)?gradeNorm(sheetName):null;
+  let cur=null;const out=[];
+  for(let r=h+1;r<aoa.length;r++){
+    const row=aoa[r]||[];
+    const filled=row.filter(v=>v!=null&&String(v).trim()!=="");
+    const marker=filled.find(v=>/(grade|group|등급)\s*\d|\d\s*그룹/i.test(String(v)));
+    if(marker&&filled.length<=3&&!(col.name>=0&&row[col.name]&&!GRADE_HDR.test(String(row[col.name])))){cur=gradeNorm(marker);continue;}
+    const g=i=>i>=0&&row[i]!=null?String(row[i]).trim():"";
+    const name=g(col.name),sabun=g(col.sabun),id=g(col.id);
+    if(!name&&!sabun&&!id)continue;
+    if(["성명","이름"].includes(norm(name))||norm(sabun)==="사번")continue;
+    let grade=(col.grade>=0?gradeNorm(row[col.grade]):null)||cur||sheetGrade;
+    const note=g(col.note);
+    let kpi=false;
+    if(!grade&&col.kpi>=0&&/대상/.test(g(col.kpi))){grade="KPI 평가";kpi=true;}
+    if(!grade)continue;
+    out.push({sabun,id,name,part:g(col.part),grade,note:kpi?"":note,kpi,title:g(col.title)});
+  }
+  return out;
+}
+function hoursOf(r,types){let s=0;for(const t of types)s+=r.ot[t]||0;return s;}
+function rankList(items){ // items sorted desc by h; competition ranking
+  let prev=null,rank=0;
+  return items.map((it,i)=>{if(it.h!==prev){rank=i+1;prev=it.h;}return {...it,rank};});
+}
+function aggregatePeople(recs,types){
+  const map=new Map();
+  for(const r of recs){
+    const k=keyOf(r);let p=map.get(k);
+    if(!p){p={key:k,name:r.name,id:r.id,sabun:r.sabun,h:0,months:new Set(),activeMonths:new Set(),byType:Object.fromEntries(OT_TYPES.map(t=>[t,0])),last:r,byMonth:{}};map.set(k,p);}
+    const h=hoursOf(r,types);
+    p.h+=h;p.months.add(r.month);if(h>0)p.activeMonths.add(r.month);
+    p.byMonth[r.month]=(p.byMonth[r.month]||0)+h;
+    for(const t of types)p.byType[t]+=r.ot[t]||0;
+    if(r.month>=p.last.month)p.last=r;
+  }
+  return [...map.values()].map(p=>({...p,part:p.last.part,cell:p.last.cell,title:p.last.title,emp:p.last.emp}));
+}
+</script>
+
+<script>
+/* ===== 상태 ===== */
+const $=s=>document.querySelector(s);
+const PART_COLORS=["--p1","--p2","--p3","--p4","--p5","--p6"];
+const TYPE_COLORS={"연장":"--p1","휴일":"--p2","휴일연장":"--p3","연장야간":"--p4","휴일야간":"--p5"};
+const LS="otAnalyzer.v1";
+let S={records:[],sources:{},sample:false,grades:null};
+let F={from:"",to:"",part:"all",cell:"all",emp:"all",types:new Set(OT_TYPES),trend:"part",rankMonth:"all",search:"",rankAll:false,rankView:"team"};
+
+const fmt=(n,d=1)=>{if(!isFinite(n))return "-";const v=Math.round(n*10**d)/10**d;return v.toLocaleString("ko-KR",{maximumFractionDigits:d});};
+const pct=(n,d=1)=>isFinite(n)?fmt(n*100,d)+"%":"-";
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const mLabel=m=>{const[y,mo]=m.split("-");return `${y.slice(2)}.${mo}`;};
+const mLong=m=>{const[y,mo]=m.split("-");return `${y}년 ${+mo}월`;};
+const cssVar=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove("show"),1800);}
+
+function save(){try{if(S.sample){localStorage.removeItem(LS);return;}localStorage.setItem(LS,JSON.stringify({records:S.records,sources:S.sources,grades:S.grades}));}catch(e){}}
+function load(){try{const j=JSON.parse(localStorage.getItem(LS)||"null");if(j&&j.records&&j.records.length){S.records=j.records;S.sources=j.sources||{};S.grades=j.grades||null;S.sample=false;return true;}}catch(e){}return false;}
+
+/* ===== 예시 데이터 (실제 파일을 넣으면 사라짐) ===== */
+function makeSample(){
+  let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+  const org=[["장소데이터1파트",["장소DB1셀","장소DB2셀","장소CP1셀"]],["장소데이터2파트",["장소검색셀","장소심사셀","장소제보1셀"]]];
+  const people=[];let n=1;
+  org.forEach(([p,cells])=>cells.forEach(c=>{for(let i=0;i<8;i++){people.push({sabun:"S"+String(n).padStart(3,"0"),id:"sample"+n,name:"예시 팀원"+String(n).padStart(2,"0"),part:p,cell:c,title:i===0?"셀장":"팀원",emp:"정직원",w:rnd()});n++;}}));
+  const months=["2025-07","2025-08","2025-09","2025-10","2025-11","2025-12"];
+  const recs=[];
+  months.forEach((m,mi)=>people.forEach(pp=>{
+    const busy=pp.cell==="장소심사셀"?0.75:pp.cell==="장소검색셀"?0.5:0.3;
+    const on=rnd()<busy*(0.6+pp.w*0.8);
+    const ext=on?Math.round(2+rnd()*14*(0.5+pp.w)):0;
+    const hol=on&&rnd()<0.25?Math.round(4+rnd()*4):0;
+    recs.push({month:m,sabun:pp.sabun,id:pp.id,name:pp.name,team:"장소데이터팀",part:pp.part,cell:pp.cell,title:pp.title,emp:pp.emp,
+      ot:{"연장야간":on&&rnd()<0.15?1:0,"휴일야간":0,"연장":ext,"휴일":hol,"휴일연장":hol&&rnd()<0.3?1:0}});
+  }));
+  return recs;
+}
+
+/* ===== 파일 읽기 ===== */
+async function handleFiles(files){
+  const added=[],errs=[];let gradeLoaded=false;
+  for(const f of files){
+    try{
+      const buf=await f.arrayBuffer();
+      const wb=XLSX.read(buf,{type:"array",cellDates:false});
+      let any=false;
+      for(const sn of wb.SheetNames){
+        const ws=wb.Sheets[sn];
+        const aoa=fillMerges(XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null,blankrows:true}),ws["!merges"]);
+        const res=parseSheet(aoa,f.name,sn);
+        if(res.records.length){any=true;added.push({file:f.name,sheet:sn,records:res.records});}
+      }
+      if(!any){
+        const list=[];
+        for(const sn of wb.SheetNames){const ws=wb.Sheets[sn];list.push(...parseGradeSheet(fillMerges(XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null,blankrows:true}),ws["!merges"]),sn));}
+        if(list.length){S.grades={file:f.name,list};gradeLoaded=true;}
+        else errs.push(`${f.name}: 시간외근무 표나 평가 등급 열을 찾지 못했습니다`);
+      }
+    }catch(e){errs.push(`${f.name}: 읽을 수 없는 파일입니다`);}
+  }
+  if(added.length){
+    if(S.sample){S.records=[];S.sources={};S.sample=false;}
+    const byMonth={};
+    added.forEach(a=>a.records.forEach(r=>{(byMonth[r.month]=byMonth[r.month]||{recs:[],src:new Set()}).recs.push(r);byMonth[r.month].src.add(a.file);}));
+    const ms=Object.keys(byMonth);
+    S.records=S.records.filter(r=>!byMonth[r.month]).concat(ms.flatMap(m=>byMonth[m].recs));
+    ms.forEach(m=>S.sources[m]=[...byMonth[m].src].join(", "));
+    save();
+    const all=allMonths();F.from=all[0];F.to=all[all.length-1];F.rankMonth="all";
+    toast(`${ms.length}개월 데이터를 불러왔습니다`);
+  }
+  if(gradeLoaded){if(!S.sample)save();F.rankView="grade";syncRankSeg();const st=gradeStats();toast(`평가 명단 ${S.grades.list.length}명을 불러왔습니다`);if(st.unmatched.length)errs.push(`명단 중 ${st.unmatched.length}명은 근무 데이터에서 찾지 못했습니다: ${st.unmatched.slice(0,8).join(", ")}${st.unmatched.length>8?" 외":""}`);}
+  if(errs.length)showBanner(errs.join(" · "),true);else showBanner();
+  render();
+}
+function gradeIndex(){
+  if(!S.grades)return null;if(gradeIndex._src===S.grades)return gradeIndex._v;
+  const bySabun={},byId={},byName={},dup=new Set();
+  S.grades.list.forEach(e=>{if(e.sabun)bySabun[e.sabun]=e;if(e.id)byId[e.id.toLowerCase()]=e;if(e.name){if(byName[e.name])dup.add(e.name);byName[e.name]=e;}});
+  dup.forEach(n=>delete byName[n]);
+  gradeIndex._src=S.grades;return gradeIndex._v={bySabun,byId,byName};
+}
+function gradeOf(p){const ix=gradeIndex();if(!ix)return null;return (p.sabun&&ix.bySabun[p.sabun])||(p.id&&ix.byId[String(p.id).toLowerCase()])||ix.byName[p.name]||null;}
+function evalGroupOf(p){const g=gradeOf(p);if(!g)return null;return {part:g.part||p.part,grade:g.grade,kpi:!!g.kpi,label:`${g.part||p.part} · ${g.grade}${g.note?` (${g.note})`:""}`};}
+function gradeStats(){
+  if(!S.grades)return {groups:0,unmatched:[]};
+  const keys=new Set(),ids=new Set(),names=new Set();S.records.forEach(r=>{keys.add(r.sabun);ids.add(String(r.id).toLowerCase());names.add(r.name);});
+  const unmatched=S.grades.list.filter(e=>!((e.sabun&&keys.has(e.sabun))||(e.id&&ids.has(e.id.toLowerCase()))||(e.name&&names.has(e.name)))).map(e=>e.name||e.sabun||e.id);
+  const partBy={};S.records.slice().sort((x,y)=>x.month<y.month?-1:1).forEach(r=>{partBy[r.sabun]=partBy[String(r.id).toLowerCase()]=partBy[r.name]=r.part;});
+  const groups=new Set(S.grades.list.filter(e=>!e.kpi).map(e=>(e.part||partBy[e.sabun]||partBy[(e.id||"").toLowerCase()]||partBy[e.name]||"")+"|"+e.grade)).size;
+  return {groups,unmatched};
+}
+function syncRankSeg(){document.querySelectorAll("[data-rview]").forEach(x=>x.setAttribute("aria-pressed",x.dataset.rview===F.rankView));}
+function showBanner(msg,isErr){
+  const b=$("#banner");
+  if(msg){b.textContent=msg;b.hidden=false;b.style.background=isErr?"var(--sunk)":"";b.style.color=isErr?"var(--warn)":"";return;}
+  if(S.sample){b.textContent="지금 보이는 건 예시 데이터입니다. 엑셀 파일을 넣으면 실제 값으로 바뀝니다.";b.hidden=false;b.style.background="";b.style.color="";}
+  else b.hidden=true;
+}
+
+/* ===== 조회 ===== */
+const allMonths=()=>[...new Set(S.records.map(r=>r.month))].sort();
+const inRange=m=>(!F.from||m>=F.from)&&(!F.to||m<=F.to);
+function scoped(){return S.records.filter(r=>inRange(r.month)&&(F.part==="all"||r.part===F.part)&&(F.cell==="all"||r.cell===F.cell)&&(F.emp==="all"||r.emp===F.emp));}
+const types=()=>[...F.types];
+function sortOrg(a,b){return a.localeCompare(b,"ko",{numeric:true});}
+function partsOf(recs){return [...new Set(recs.map(r=>r.part))].sort((a,b)=>(/직속/.test(a)-/직속/.test(b))||sortOrg(a,b));}
+function cellsOf(recs,part){return [...new Set(recs.filter(r=>!part||r.part===part).map(r=>r.cell))].sort((a,b)=>(/직속/.test(a)-/직속/.test(b))||sortOrg(a,b));}
+function partColor(part,parts){const i=parts.indexOf(part);return `var(${PART_COLORS[i%PART_COLORS.length]})`;}
+
+/* ===== 렌더 ===== */
+function render(){
+  renderChips();renderFilters();
+  if(!S.records.length){
+    ["#kpis","#trend","#trendLegend","#orgWrap","#rankWrap","#tops","#pareto","#cellShare","#paretoNote","#cellNote"].forEach(s=>$(s).innerHTML="");
+    $("#orgWrap").innerHTML='<div class="empty-state">엑셀 파일을 넣으면 여기에 파트·셀별 표가 나옵니다.</div>';
+    $("#rankMore").hidden=true;return;
+  }
+  const recs=scoped(),T=types(),months=allMonths().filter(inRange);
+  renderKPIs(recs,T,months);renderTrend(recs,T,months);renderOrg(recs,T,months);renderRank(recs,T,months);renderTops(recs,T,months);renderContrib(recs,T);
+}
+function renderChips(){
+  const ms=allMonths();
+  const gs=S.grades?gradeStats():null;
+  $("#gradeChip").innerHTML=S.grades?`<span class="chip"><b>평가 명단</b>${esc(S.grades.file)} · ${S.grades.list.length}명 · ${gs.groups}개 그룹${gs.unmatched.length?` · 미매칭 ${gs.unmatched.length}명`:""}<button type="button" aria-label="평가 명단 빼기" id="gradeDel">×</button></span>`:'<span class="sub">평가대상자 명단(grade 구분)을 넣으면 개인별 랭킹을 평가그룹별로 볼 수 있습니다.</span>';
+  $("#monthChips").innerHTML=ms.length?ms.map(m=>`<span class="chip" title="${esc(S.sources[m]||"")}"><b>${mLong(m)}</b>${S.sample?"예시":esc(S.sources[m]||"")}${S.sample?"":`<button type="button" aria-label="${mLong(m)} 데이터 빼기" data-del="${m}">×</button>`}</span>`).join(""):'<span class="sub">불러온 데이터가 없습니다.</span>';
+}
+function opt(v,l,sel){return `<option value="${esc(v)}"${v===sel?" selected":""}>${esc(l)}</option>`;}
+function renderFilters(){
+  const ms=allMonths();
+  if(!ms.includes(F.from))F.from=ms[0]||"";if(!ms.includes(F.to))F.to=ms[ms.length-1]||"";
+  if(F.from>F.to)[F.from,F.to]=[F.to,F.from];
+  $("#fFrom").innerHTML=ms.map(m=>opt(m,mLong(m),F.from)).join("");
+  $("#fTo").innerHTML=ms.map(m=>opt(m,mLong(m),F.to)).join("");
+  const parts=partsOf(S.records);if(F.part!=="all"&&!parts.includes(F.part))F.part="all";
+  $("#fPart").innerHTML=opt("all","전체",F.part)+parts.map(p=>opt(p,p,F.part)).join("");
+  const cells=cellsOf(S.records,F.part==="all"?null:F.part);if(F.cell!=="all"&&!cells.includes(F.cell))F.cell="all";
+  $("#fCell").innerHTML=opt("all","전체",F.cell)+cells.map(c=>opt(c,c,F.cell)).join("");
+  const emps=[...new Set(S.records.map(r=>r.emp).filter(Boolean))].sort();
+  $("#fEmp").innerHTML=opt("all","전체",F.emp)+emps.map(e=>opt(e,e,F.emp)).join("");
+  if(!$("#fTypes").children.length){
+    $("#fTypes").innerHTML=OT_TYPES.map((t,i)=>`<label for="ty${i}"><input type="checkbox" id="ty${i}" value="${t}" checked>${t}</label>`).join("");
+  }
+  const rm=ms.filter(inRange);if(F.rankMonth!=="all"&&!rm.includes(F.rankMonth))F.rankMonth="all";
+  $("#rankMonth").innerHTML=opt("all",`선택 기간 전체 (${rm.length}개월)`,F.rankMonth)+rm.slice().reverse().map(m=>opt(m,mLong(m),F.rankMonth)).join("");
+}
+function renderKPIs(recs,T,months){
+  const total=recs.reduce((s,r)=>s+hoursOf(r,T),0);
+  const people=aggregatePeople(recs,T);
+  const active=people.filter(p=>p.h>0);
+  const pm=recs.length,activePm=recs.filter(r=>hoursOf(r,T)>0).length;
+  const byM={};months.forEach(m=>byM[m]=0);recs.forEach(r=>byM[r.month]+=hoursOf(r,T));
+  const peak=months.slice().sort((a,b)=>byM[b]-byM[a])[0];
+  const byCell={};recs.forEach(r=>{const k=r.cell;byCell[k]=(byCell[k]||0)+hoursOf(r,T);});
+  const topCell=Object.entries(byCell).sort((a,b)=>b[1]-a[1])[0];
+  const last=months[months.length-1],prev=months[months.length-2];
+  const delta=prev?byM[last]-byM[prev]:null;
+  const k=[
+    ["총 투입시간",`${fmt(total)}<small>h</small>`,`${months.length}개월 · 월평균 ${fmt(total/(months.length||1))}h`],
+    ["참여 인원",`${active.length}<small>/ ${people.length}명</small>`,`인-월 기준 참여율 ${pct(activePm/(pm||1),0)}`],
+    ["참여자 1인당",`${fmt(active.length?total/active.length:0)}<small>h</small>`,`참여 월 평균 ${fmt(activePm?total/activePm:0)}h/월`],
+    ["가장 많은 달",peak?`${mLabel(peak)}<small>${fmt(byM[peak])}h</small>`:"-",last?`최근 ${mLabel(last)} ${fmt(byM[last])}h${delta!=null?` (전월 ${delta>=0?"+":""}${fmt(delta)}h)`:""}`:""],
+    ["최다 투입 셀",topCell&&topCell[1]>0?`<span style="font-family:var(--f-body);font-size:19px">${esc(topCell[0])}</span>`:"-",topCell&&total?`${fmt(topCell[1])}h · 비중 ${pct(topCell[1]/total)}`:""],
+  ];
+  $("#kpis").innerHTML=k.map(([l,v,d])=>`<div class="kpi"><span class="l">${l}</span><span class="v">${v}</span><span class="d" title="${esc(d)}">${d}</span></div>`).join("");
+}
+function renderTrend(recs,T,months){
+  const mode=F.trend;
+  const parts=partsOf(S.records);
+  let series;
+  if(mode==="type")series=T.map(t=>({key:t,color:`var(${TYPE_COLORS[t]})`,val:m=>recs.filter(r=>r.month===m).reduce((s,r)=>s+(r.ot[t]||0),0)}));
+  else if(mode==="cell"){
+    const cells=[...new Set(recs.map(r=>r.part+"|"+r.cell))].sort((a,b)=>{const[pa,ca]=a.split("|"),[pb,cb]=b.split("|");return parts.indexOf(pa)-parts.indexOf(pb)||sortOrg(ca,cb);});
+    const pal=["--p1","--p2","--p3","--p4","--p5","--p6"];
+    series=cells.map((k,i)=>{const[p,c]=k.split("|");return {key:c,sub:p,color:`var(${pal[i%pal.length]})`,op:1-Math.floor(i/pal.length)*0.35,val:m=>recs.filter(r=>r.month===m&&r.part===p&&r.cell===c).reduce((s,r)=>s+hoursOf(r,T),0)};});
+  } else series=partsOf(recs).map(p=>({key:p,color:partColor(p,parts),val:m=>recs.filter(r=>r.month===m&&r.part===p).reduce((s,r)=>s+hoursOf(r,T),0)}));
+  const data=months.map(m=>({m,v:series.map(s=>s.val(m))}));
+  const max=Math.max(1,...data.map(d=>d.v.reduce((a,b)=>a+b,0)));
+  const step=niceStep(max/4),top=Math.ceil(max/step)*step;
+  const W=Math.max(1100,months.length*56+70),H=280,L=46,R=12,TT=22,B=30,ih=H-TT-B,iw=W-L-R;
+  const bw=Math.min(44,iw/months.length*0.6);
+  let g=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="월별 시간외근무 투입 추이">`;
+  for(let v=0;v<=top+1e-9;v+=step){const y=TT+ih-(v/top)*ih;g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${L-8}" y="${y+4}" text-anchor="end" font-size="11" fill="var(--faint)" font-family="var(--f-num)">${fmt(v,0)}</text>`;}
+  data.forEach((d,i)=>{
+    const cx=L+iw*(i+0.5)/months.length;let y=TT+ih;let sum=0;
+    d.v.forEach((v,si)=>{if(v<=0)return;const hh=v/top*ih;y-=hh;sum+=v;g+=`<rect x="${cx-bw/2}" y="${y}" width="${bw}" height="${hh}" fill="${series[si].color}" fill-opacity="${series[si].op??1}"><title>${mLong(d.m)} · ${esc(series[si].key)} ${fmt(v)}h</title></rect>`;});
+    g+=`<text x="${cx}" y="${y-6}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--fg)" font-family="var(--f-num)">${fmt(sum)}</text>`;
+    g+=`<text x="${cx}" y="${H-10}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--f-num)">${mLabel(d.m)}</text>`;
+  });
+  g+=`<text x="${L-8}" y="12" text-anchor="end" font-size="10" fill="var(--faint)">시간</text></svg>`;
+  $("#trend").innerHTML=g;
+  $("#trendLegend").innerHTML=series.map(s=>`<span><i style="background:${s.color};opacity:${s.op??1}"></i>${esc(s.key)}</span>`).join("");
+}
+function niceStep(x){const p=10**Math.floor(Math.log10(x||1)),f=x/p;return (f<=1?1:f<=2?2:f<=5?5:10)*p;}
+function orgRows(recs,T,months){
+  const total=recs.reduce((s,r)=>s+hoursOf(r,T),0);
+  const row=(label,rs,kind)=>{
+    const byM=months.map(m=>rs.filter(r=>r.month===m).reduce((s,r)=>s+hoursOf(r,T),0));
+    const sum=byM.reduce((a,b)=>a+b,0),pm=rs.length,act=rs.filter(r=>hoursOf(r,T)>0).length;
+    const heads=months.map(m=>rs.filter(r=>r.month===m).length).filter(Boolean);
+    return {label,kind,byM,sum,share:total?sum/total:0,avgHead:heads.length?heads.reduce((a,b)=>a+b,0)/heads.length:0,rate:pm?act/pm:0,perHead:pm?sum/pm:0};
+  };
+  const out=[];
+  partsOf(recs).forEach(p=>{const pr=recs.filter(r=>r.part===p);out.push(row(p,pr,"part"));cellsOf(pr,p).forEach(c=>out.push(row(c,pr.filter(r=>r.cell===c),"cell")));});
+  out.push(row("합계",recs,"total"));
+  return out;
+}
+function renderOrg(recs,T,months){
+  const rows=orgRows(recs,T,months);
+  const cellMax=Math.max(1,...rows.filter(r=>r.kind==="cell").flatMap(r=>r.byM));
+  const heat=(v,kind)=>kind==="cell"&&v>0?` style="background:rgba(${cssVar("--heat")},${(0.08+0.55*v/cellMax).toFixed(2)})"`:"";
+  let h=`<table id="orgTable"><thead><tr><th class="l">파트 / 셀</th>${months.map(m=>`<th>${mLabel(m)}</th>`).join("")}<th>합계(h)</th><th>비중</th><th>월평균(h)</th><th>평균 인원</th><th>참여율</th><th>인당 월평균(h)</th></tr></thead><tbody>`;
+  rows.forEach(r=>{h+=`<tr class="${r.kind}"><td class="l">${esc(r.label)}</td>${r.byM.map(v=>`<td class="${v?"":"zero"}"${heat(v,r.kind)}>${fmt(v)}</td>`).join("")}<td>${fmt(r.sum)}</td><td>${pct(r.share)}</td><td>${fmt(r.sum/(months.length||1))}</td><td>${fmt(r.avgHead)}</td><td>${pct(r.rate,0)}</td><td>${fmt(r.perHead,2)}</td></tr>`;});
+  $("#orgWrap").innerHTML=h+"</tbody></table>";
+}
+function rankData(recs,T){
+  const base=F.rankMonth==="all"?recs:recs.filter(r=>r.month===F.rankMonth);
+  const people=aggregatePeople(base,T).sort((a,b)=>b.h-a.h||a.name.localeCompare(b.name,"ko"));
+  const total=people.reduce((s,p)=>s+p.h,0);
+  const cellTot={},partTot={};people.forEach(p=>{const k=p.part+"|"+p.cell;cellTot[k]=(cellTot[k]||0)+p.h;partTot[p.part]=(partTot[p.part]||0)+p.h;});
+  const decorate=all=>{const list=all.filter(p=>!isLeader(p));let cum=0;const t=all.reduce((s,p)=>s+p.h,0);return rankList(list).map(p=>{cum+=p.h;return {...p,share:total?p.h/total:0,groupShare:t?p.h/t:0,partShare:partTot[p.part]?p.h/partTot[p.part]:0,cellShare:cellTot[p.part+"|"+p.cell]?p.h/cellTot[p.part+"|"+p.cell]:0,cum:t?cum/t:0};});};
+  const pOrder=partsOf(S.records);
+  let groups;
+  if(F.rankView==="part")groups=partsOf(base).filter(pt=>people.some(p=>p.part===pt&&!isLeader(p))).map(pt=>({part:pt,label:pt,members:people.filter(p=>p.part===pt)}));
+  else if(F.rankView==="grade"&&S.grades){
+    const map=new Map(),out=[];
+    const kpi=[];
+    people.forEach(p=>{const g=evalGroupOf(p);if(!g){if(!isLeader(p))out.push(p);return;}if(g.kpi){if(!isLeader(p))kpi.push(p);return;}if(!map.has(g.label))map.set(g.label,{part:g.part,grade:g.grade,label:g.label,members:[]});map.get(g.label).members.push(p);});
+    groups=[...map.values()].sort((a,b)=>((pOrder.indexOf(a.part)+1||99)-(pOrder.indexOf(b.part)+1||99))||sortOrg(a.part,b.part)||sortOrg(a.grade,b.grade));
+    if(kpi.length)groups.push({part:null,label:"KPI 평가 대상 (셀장·파트장, 그룹 순위 없음)",members:kpi,outside:true});
+    if(out.length)groups.push({part:null,label:"명단에 없음 (평가 대상 아님)",members:out,outside:true});
+  } else groups=[{part:null,label:null,members:people}];
+  groups.forEach(g=>{g.h=g.members.reduce((s,p)=>s+p.h,0);g.list=decorate(g.members);});
+  return {groups,total,nMonths:new Set(base.map(r=>r.month)).size};
+}
+/* 같은 사람(사번·ID)의 조직 변동 이력: 선택 기간 기준, 연속된 같은 조직은 하나로 묶음 */
+let ORG_HIST=new Map();
+function buildOrgHist(){
+  const by=new Map();
+  S.records.filter(r=>inRange(r.month)).sort((a,b)=>a.month<b.month?-1:a.month>b.month?1:0).forEach(r=>{
+    const k=keyOf(r);if(!by.has(k))by.set(k,[]);const segs=by.get(k);const last=segs[segs.length-1];
+    if(last&&last.part===r.part&&last.cell===r.cell)last.to=r.month;else segs.push({part:r.part,cell:r.cell,from:r.month,to:r.month});
+  });
+  ORG_HIST=by;
+}
+function orgCells(p){
+  const h=ORG_HIST.get(p.key)||[];
+  if(h.length<2)return `<td class="l">${esc(p.part)}</td><td class="l">${esc(p.cell)}</td>`;
+  const n=h.length-1,partMoved=new Set(h.map(x=>x.part)).size>1;
+  const attr=`data-org="${esc(p.key)}" aria-label="조직 변동 ${n}회"`;
+  return `<td class="l moved" ${attr}>${esc(p.part)}${partMoved?`<span class="mv">이동</span>`:""}</td><td class="l moved" ${attr}>${esc(p.cell)}${partMoved?"":`<span class="mv">이동</span>`}</td>`;
+}
+function orgTipHtml(key){
+  const h=ORG_HIST.get(key)||[];if(h.length<2)return "";
+  const range=s=>s.from===s.to?mLabel(s.from):`${mLabel(s.from)}~${mLabel(s.to)}`;
+  const items=h.map((s,i)=>{const prev=h[i-1];
+    const part=prev&&prev.part!==s.part?`<mark>${esc(s.part)}</mark>`:esc(s.part);
+    const cell=prev&&prev.cell!==s.cell?`<mark>${esc(s.cell)}</mark>`:esc(s.cell);
+    return `<li class="${i===h.length-1?"now":""}"><span class="when">${range(s)}</span><span>${part} / ${cell}${i===h.length-1?" (현재)":""}</span></li>`;}).join("");
+  return `<h4>조직 변동 ${h.length-1}회</h4><ol>${items}</ol>`;
+}
+function renderRank(recs,T,months){
+  buildOrgHist();
+  const view=F.rankView;
+  if(view==="grade"&&!S.grades){
+    $("#rankWrap").innerHTML='<div class="empty-state">평가대상자 명단 파일을 위 데이터 칸에 넣으면 파트×grade 그룹별 순위가 나옵니다.<br>명단에는 사번·ID·성명 중 하나와 grade(등급) 구분이 있으면 됩니다.</div>';
+    $("#rankMore").hidden=true;return;
+  }
+  const {groups,total,nMonths}=rankData(recs,T);
+  const q=F.search.trim().toLowerCase();
+  const grouped=view!=="team",limit=grouped?10:20;
+  const all=F.rankMonth==="all";
+  const parts=partsOf(S.records);
+  const isGrade=view==="grade";
+  const ncol=(all?13:11)+(isGrade?1:0);
+  const rankTh=view==="part"?"파트 내 순위":isGrade?"그룹 내 순위":"순위";
+  let h=`<table id="rankTable"><thead><tr><th>${rankTh}</th><th class="l">성명</th>${isGrade?'<th class="l">평가그룹</th>':""}<th class="l">파트</th><th class="l">셀</th><th class="l">직책</th><th>투입(h)</th><th class="l">유형 구성</th><th>팀 기여도</th><th>${isGrade?"그룹 내 기여도":"파트 내 기여도"}</th><th>셀 내 기여도</th><th>누적</th>${all?"<th>참여 월</th><th>참여월 평균(h)</th>":""}</tr></thead><tbody>`;
+  let anyRows=false,hidden=0;
+  groups.forEach(g=>{
+    let list=g.list.filter(p=>p.h>0||q);
+    if(q)list=list.filter(p=>(p.name+" "+p.id+" "+p.sabun).toLowerCase().includes(q));
+    if(grouped&&q&&!list.length)return;
+    const shown=(F.rankAll||q)?list:list.slice(0,limit);hidden+=list.length-shown.length;
+    if(grouped){const active=g.list.filter(p=>p.h>0).length;
+      const dot=g.part?`<i style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:7px;background:${partColor(g.part,parts)}"></i>`:"";
+      h+=`<tr class="part"><td class="l" colspan="${ncol}">${dot}${esc(g.label)} <span class="sub" style="font-weight:400;margin-left:8px">${fmt(g.h)}h · 팀 대비 ${pct(total?g.h/total:0)} · 참여 ${active}/${g.list.length}명${g.list.length?` · 인당 ${fmt(g.h/g.list.length)}h`:""}</span></td></tr>`;}
+    const tmax=Math.max(1,...list.map(p=>p.h));
+    shown.forEach(p=>{
+      anyRows=true;
+      const bar=T.map(t=>p.byType[t]>0?`<span style="width:${(p.byType[t]/tmax*100).toFixed(1)}%;background:var(${TYPE_COLORS[t]})" title="${t} ${fmt(p.byType[t])}h"></span>`:"").join("");
+      const eg=isGrade?evalGroupOf(p):null;
+      h+=`<tr tabindex="0" data-person="${esc(p.key)}"><td><span class="rank${p.rank<=3&&p.h>0&&!g.outside?" top":""}">${g.outside?"-":p.h>0?p.rank:"-"}</span></td><td class="l"><span class="who">${esc(p.name)}<small>${esc(p.id||p.sabun)}</small></span></td>${isGrade?`<td class="l">${eg?`<span class="pill${eg.kpi?"":" on"}">${esc(eg.grade)}</span>`:'<span class="pill">대상 아님</span>'}</td>`:""}${orgCells(p)}<td class="l">${esc(p.title)}</td><td><b>${fmt(p.h)}</b></td><td class="l"><span class="bar">${bar}</span></td><td>${pct(p.share)}</td><td>${pct(isGrade?p.groupShare:p.partShare)}</td><td>${pct(p.cellShare)}</td><td>${pct(p.cum,0)}</td>${all?`<td><span class="pill${p.activeMonths.size===nMonths&&nMonths>1?" on":""}">${p.activeMonths.size}/${nMonths}</span></td><td>${fmt(p.activeMonths.size?p.h/p.activeMonths.size:0)}</td>`:""}</tr>`;
+    });
+    if(grouped&&!shown.length)h+=`<tr><td class="l" colspan="${ncol}" style="color:var(--faint)">시간외근무 기록이 없습니다.</td></tr>`;
+  });
+  if(!anyRows&&(!grouped||q))h+=`<tr><td class="l" colspan="${ncol}" style="text-align:center;color:var(--muted);padding:20px">${q?"검색 결과가 없습니다.":"선택한 조건에 시간외근무 기록이 없습니다."}</td></tr>`;
+  $("#rankWrap").innerHTML=h+"</tbody></table>";
+  const btn=$("#rankMore");btn.hidden=!!q||(!F.rankAll&&hidden===0);
+  btn.textContent=F.rankAll?(grouped?"그룹별 상위 10명만 보기":"상위 20명만 보기"):`나머지 ${hidden}명까지 모두 보기`;
+}
+function renderTops(recs,T,months){
+  $("#tops").innerHTML=months.slice().reverse().map(m=>{
+    const everyone=aggregatePeople(recs.filter(r=>r.month===m),T);
+    const ppl=rankList(everyone.filter(p=>p.h>0&&!isLeader(p)).sort((a,b)=>b.h-a.h));
+    const tot=everyone.reduce((s,p)=>s+p.h,0);
+    return `<div class="top-m"><h3>${mLong(m)}<span>${fmt(tot)}h</span></h3>${ppl.length?`<ol>${ppl.slice(0,5).map(p=>`<li><span><em>${p.rank}</em>${esc(p.name)}</span><b>${fmt(p.h)}h</b></li>`).join("")}</ol>`:'<span class="empty">기록 없음</span>'}</div>`;
+  }).join("");
+}
+function renderContrib(recs,T){
+  const ppl=aggregatePeople(recs,T).sort((a,b)=>b.h-a.h);
+  const total=ppl.reduce((s,p)=>s+p.h,0),n=ppl.length;
+  const W=460,H=240,L=40,R=12,TT=12,B=34,iw=W-L-R,ih=H-TT-B;
+  let pts=[[0,0]],cum=0;ppl.forEach((p,i)=>{cum+=p.h;pts.push([(i+1)/n,total?cum/total:0]);});
+  const X=x=>L+x*iw,Y=y=>TT+ih-y*ih;
+  let g=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="누적 기여 곡선" style="max-width:560px;min-width:0">`;
+  [0,.25,.5,.75,1].forEach(v=>{g+=`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${L-6}" y="${Y(v)+4}" text-anchor="end" font-size="10" fill="var(--faint)" font-family="var(--f-num)">${v*100}%</text><text x="${X(v)}" y="${H-18}" text-anchor="middle" font-size="10" fill="var(--faint)" font-family="var(--f-num)">${v*100}%</text>`;});
+  g+=`<line x1="${X(0)}" y1="${Y(0)}" x2="${X(1)}" y2="${Y(1)}" stroke="var(--faint)" stroke-dasharray="3 4"/>`;
+  const path=pts.map((p,i)=>`${i?"L":"M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join("");
+  g+=`<path d="${path}L${X(1)},${Y(0)}Z" fill="var(--accent)" fill-opacity=".12"/><path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>`;
+  const share=f=>{const k=Math.max(1,Math.round(n*f));return total?ppl.slice(0,k).reduce((s,p)=>s+p.h,0)/total:0;};
+  const s20=share(.2);const k20=Math.max(1,Math.round(n*.2));
+  g+=`<circle cx="${X(k20/n)}" cy="${Y(s20)}" r="4" fill="var(--accent)"/><text x="${X(k20/n)+8}" y="${Y(s20)+14}" font-size="11" fill="var(--fg)" font-weight="600" font-family="var(--f-num)">상위 20% → ${pct(s20,0)}</text>`;
+  g+=`<text x="${W/2}" y="${H-3}" text-anchor="middle" font-size="10" fill="var(--muted)">인원 비율 (투입 많은 순)</text></svg>`;
+  $("#pareto").innerHTML=n?g:"";
+  const active=ppl.filter(p=>p.h>0).length;
+  let half=0,c=0;for(const p of ppl){c+=p.h;half++;if(c>=total/2)break;}
+  $("#paretoNote").innerHTML=total?`전체 ${n}명 중 <b>${active}명</b>이 시간외근무를 했고, <b>상위 ${half}명(${pct(half/n,0)})</b>이 전체 투입의 절반을 맡았습니다. 상위 20%(${k20}명)의 비중은 <b>${pct(s20)}</b>입니다.`:"선택한 조건에 시간외근무 기록이 없습니다.";
+  const parts=partsOf(S.records);
+  const cells={};recs.forEach(r=>{const k=r.part+"|"+r.cell;(cells[k]=cells[k]||{part:r.part,cell:r.cell,h:0,heads:new Set()}).h+=hoursOf(r,T);cells[k].heads.add(keyOf(r));});
+  const arr=Object.values(cells).sort((a,b)=>b.h-a.h);const mx=Math.max(1,...arr.map(a=>a.h));
+  $("#cellShare").innerHTML=arr.map(a=>`<span>${esc(a.cell)}</span><span class="t"><span style="width:${(a.h/mx*100).toFixed(1)}%;background:${partColor(a.part,parts)}"></span></span><span class="n">${fmt(a.h)}h · ${pct(total?a.h/total:0)}</span>`).join("");
+  const top=arr[0];
+  $("#cellNote").innerHTML=top&&total?`<b>${esc(top.cell)}</b>이 전체의 ${pct(top.h/total)}를 맡았습니다. 막대 색은 파트를 나타냅니다.`:"";
+}
+function openPerson(key){
+  const T=types(),months=allMonths().filter(inRange);
+  const recs=S.records.filter(r=>keyOf(r)===key&&inRange(r.month));if(!recs.length)return;
+  const p=aggregatePeople(recs,T)[0];
+  const all=scoped();
+  const teamByM={};months.forEach(m=>teamByM[m]=0);all.forEach(r=>teamByM[r.month]+=hoursOf(r,T));
+  const rankByM={};months.forEach(m=>{const l=rankList(aggregatePeople(all.filter(r=>r.month===m),T).filter(x=>x.h>0&&!isLeader(x)).sort((a,b)=>b.h-a.h));const me=l.find(x=>x.key===key);rankByM[m]=me?`${me.rank}위/${l.length}`:(isLeader(recs[recs.length-1])?"순위 제외":"-");});
+  const max=Math.max(1,...months.map(m=>p.byMonth[m]||0));
+  const W=Math.max(680,months.length*50+40),H=170,L=10,B=26,TT=18,ih=H-TT-B,iw=W-2*L,bw=Math.min(34,iw/months.length*.6);
+  let g=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(p.name)} 월별 투입">`;
+  g+=`<line x1="${L}" x2="${W-L}" y1="${TT+ih}" y2="${TT+ih}" stroke="var(--line)"/>`;
+  months.forEach((m,i)=>{const v=p.byMonth[m]||0,cx=L+iw*(i+.5)/months.length,hh=v/max*ih;
+    g+=`<rect x="${cx-bw/2}" y="${TT+ih-hh}" width="${bw}" height="${hh}" fill="var(--accent)"/><text x="${cx}" y="${TT+ih-hh-5}" text-anchor="middle" font-size="11" fill="var(--fg)" font-family="var(--f-num)">${v?fmt(v):""}</text><text x="${cx}" y="${H-8}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--f-num)">${mLabel(m)}</text>`;});
+  g+="</svg>";
+  const tot=Object.values(teamByM).reduce((a,b)=>a+b,0);
+  $("#dlgBody").innerHTML=`<div class="dlg-h"><div><h2>${esc(p.name)} <span class="sub" style="font-weight:400">${esc(p.id)} · ${esc(p.part)} / ${esc(p.cell)} · ${esc(p.title)}</span></h2>${(ORG_HIST.get(key)||[]).length>1?`<div class="tip" style="position:static;box-shadow:none;pointer-events:auto;max-width:none">${orgTipHtml(key)}</div>`:""}<p class="sub">선택 기간 ${fmt(p.h)}h · 팀 기여도 ${pct(tot?p.h/tot:0)} · 참여 ${p.activeMonths.size}/${months.length}개월</p></div><button type="button" class="btn" id="dlgClose">닫기</button></div>
+  <div class="chart">${g}</div>
+  <div class="tbl"><table><thead><tr><th class="l">월</th>${T.map(t=>`<th>${t}</th>`).join("")}<th>합계(h)</th><th>팀 대비</th><th>월 순위</th><th class="l">소속</th></tr></thead><tbody>${months.map(m=>{const r=recs.find(x=>x.month===m);const v=p.byMonth[m]||0;return `<tr><td class="l">${mLong(m)}</td>${T.map(t=>`<td class="${r&&r.ot[t]?"":"zero"}">${r?fmt(r.ot[t]):"-"}</td>`).join("")}<td><b>${r?fmt(v):"-"}</b></td><td>${teamByM[m]?pct(v/teamByM[m]):"-"}</td><td>${rankByM[m]}</td><td class="l">${r?esc(r.cell):"<span class='sub'>기록 없음</span>"}</td></tr>`;}).join("")}</tbody></table></div>`;
+  $("#dlgClose").onclick=()=>$("#dlg").close();
+  $("#dlg").showModal();
+}
+
+/* ===== 이벤트 ===== */
+$("#file").addEventListener("change",e=>{handleFiles([...e.target.files]);e.target.value="";});
+const drop=$("#drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over");}));
+drop.addEventListener("drop",e=>handleFiles([...e.dataTransfer.files]));
+document.addEventListener("dragover",e=>e.preventDefault());document.addEventListener("drop",e=>e.preventDefault());
+$("#clearAll").addEventListener("click",()=>{
+  const b=$("#clearAll");
+  if(b.dataset.armed!=="1"){b.dataset.armed="1";b.textContent="한 번 더 누르면 비웁니다";setTimeout(()=>{b.dataset.armed="";b.textContent="데이터 비우기";},3000);return;}
+  b.dataset.armed="";b.textContent="데이터 비우기";S={records:[],sources:{},sample:false};try{localStorage.removeItem(LS);}catch(e){}showBanner();render();toast("데이터를 비웠습니다");
+});
+$("#gradeChip").addEventListener("click",e=>{if(e.target.id!=="gradeDel")return;S.grades=null;if(F.rankView==="grade"){F.rankView="team";syncRankSeg();}save();render();toast("평가 명단을 뺐습니다");});
+$("#monthChips").addEventListener("click",e=>{const m=e.target.dataset.del;if(!m)return;S.records=S.records.filter(r=>r.month!==m);delete S.sources[m];save();render();toast(`${mLong(m)} 데이터를 뺐습니다`);});
+$("#fFrom").onchange=e=>{F.from=e.target.value;render();};
+$("#fTo").onchange=e=>{F.to=e.target.value;render();};
+$("#fPart").onchange=e=>{F.part=e.target.value;F.cell="all";render();};
+$("#fCell").onchange=e=>{F.cell=e.target.value;render();};
+$("#fEmp").onchange=e=>{F.emp=e.target.value;render();};
+$("#fTypes").addEventListener("change",e=>{const t=e.target.value;if(e.target.checked)F.types.add(t);else F.types.delete(t);if(!F.types.size){F.types.add(t);e.target.checked=true;toast("유형은 하나 이상 골라야 합니다");}F.types=new Set(OT_TYPES.filter(x=>F.types.has(x)));render();});
+document.querySelectorAll("[data-trend]").forEach(b=>b.addEventListener("click",()=>{F.trend=b.dataset.trend;document.querySelectorAll("[data-trend]").forEach(x=>x.setAttribute("aria-pressed",x===b));render();}));
+$("#rankMonth").onchange=e=>{F.rankMonth=e.target.value;render();};
+$("#rankSearch").addEventListener("input",e=>{F.search=e.target.value;render();});
+document.querySelectorAll("[data-rview]").forEach(b=>b.addEventListener("click",()=>{F.rankView=b.dataset.rview;F.rankAll=false;document.querySelectorAll("[data-rview]").forEach(x=>x.setAttribute("aria-pressed",x===b));render();}));
+$("#rankMore").onclick=()=>{F.rankAll=!F.rankAll;render();};
+$("#rankWrap").addEventListener("click",e=>{const tr=e.target.closest("tr[data-person]");if(tr)openPerson(tr.dataset.person);});
+$("#rankWrap").addEventListener("keydown",e=>{if(e.key==="Enter"){const tr=e.target.closest("tr[data-person]");if(tr)openPerson(tr.dataset.person);}});
+(function(){
+  const tip=$("#tip");let cur=null;
+  const place=(x,y)=>{const r=tip.getBoundingClientRect();let L=x+14,T=y+16;if(L+r.width>innerWidth-8)L=Math.max(8,x-r.width-14);if(T+r.height>innerHeight-8)T=Math.max(8,y-r.height-12);tip.style.left=L+"px";tip.style.top=T+"px";};
+  const hide=()=>{tip.hidden=true;if(cur)cur.classList.remove("org-hot");cur=null;};
+  $("#rankWrap").addEventListener("mouseover",e=>{const td=e.target.closest("td[data-org]");if(!td){hide();return;}
+    const tr=td.parentElement;if(cur!==tr){hide();cur=tr;tr.classList.add("org-hot");tip.innerHTML=orgTipHtml(td.dataset.org);tip.hidden=false;}place(e.clientX,e.clientY);});
+  $("#rankWrap").addEventListener("mousemove",e=>{if(!tip.hidden&&e.target.closest("td[data-org]"))place(e.clientX,e.clientY);});
+  $("#rankWrap").addEventListener("mouseleave",hide);
+  addEventListener("scroll",hide,{passive:true});
+})();
+$("#dlg").addEventListener("click",e=>{if(e.target.id==="dlg")$("#dlg").close();});
+document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",async()=>{
+  const t=document.getElementById(b.dataset.copy);if(!t)return;
+  const tsv=[...t.rows].map(r=>[...r.cells].map(c=>c.innerText.replace(/\s+/g," ").trim()).join("\t")).join("\n");
+  try{await navigator.clipboard.writeText(tsv);toast("표를 복사했습니다. 엑셀에 붙여 넣으세요");}
+  catch(e){const r=document.createRange();r.selectNodeContents(t);const s=getSelection();s.removeAllRanges();s.addRange(r);toast("표를 선택했습니다. Ctrl+C로 복사하세요");}
+}));
+function setTheme(t){const root=document.documentElement;if(t==="sys")root.removeAttribute("data-theme");else root.setAttribute("data-theme",t);
+  [["thSys","sys"],["thLight","light"],["thDark","dark"]].forEach(([id,v])=>$("#"+id).setAttribute("aria-pressed",v===t));
+  try{localStorage.setItem(LS+".theme",t);}catch(e){}render();}
+$("#thSys").onclick=()=>setTheme("sys");$("#thLight").onclick=()=>setTheme("light");$("#thDark").onclick=()=>setTheme("dark");
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>render());
+
+/* ===== 시작 ===== */
+(function start(){
+  let th="sys";try{th=localStorage.getItem(LS+".theme")||"sys";}catch(e){}
+  if(th!=="sys"){document.documentElement.setAttribute("data-theme",th);}
+  [["thSys","sys"],["thLight","light"],["thDark","dark"]].forEach(([id,v])=>$("#"+id).setAttribute("aria-pressed",v===th));
+  if(!load()){S.records=makeSample();S.sources={};S.sample=true;}
+  const ms=allMonths();F.from=ms[0]||"";F.to=ms[ms.length-1]||"";
+  if(typeof XLSX==="undefined")showBanner("엑셀 읽기 모듈을 불러오지 못했습니다. 네트워크를 확인한 뒤 새로고침하세요.",true);else showBanner();
+  render();
+})();
+</script>
+
+</body></html>
